@@ -19,7 +19,7 @@ conda create -n rccar python=3.8
 conda activate rccar
 
 git clone https://github.com/rllab-snu/Intelligent-Systems-RLLAB.git
-cd Intelligent-Systems-2024-Pre/rccar_gym
+cd Intelligent-Systems-2025-Pre/rccar_gym
 pip install -e .
 ```
 This will install a gym environment for the RC car and its dependencies.
