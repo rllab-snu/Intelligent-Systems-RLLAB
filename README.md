@@ -19,7 +19,7 @@ conda create -n rccar python=3.8
 conda activate rccar
 
 git clone https://github.com/rllab-snu/Intelligent-Systems-RLLAB.git
-cd Intelligent-Systems-2025-Pre/rccar_gym
+cd Intelligent-Systems-RLLAB/Intelligent-Systems-2025-Pre/rccar_gym
 pip install -e .
 ```
 This will install a gym environment for the RC car and its dependencies.
@@ -41,7 +41,7 @@ This enables installed files resulting from colcon build to use desired package 
 Now, install dependencies and build the packages.
 
 ```shell
-cd Intelligent-Systems-2025-Pre
+cd Intelligent-Systems-RLLAB/Intelligent-Systems-2025-Pre
 rosdep update --rosdistro foxy
 rosdep install -i --from-path src --rosdistro foxy -y
 colcon build --symlink-install
