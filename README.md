@@ -41,7 +41,7 @@ This enables installed files resulting from colcon build to use desired package 
 Now, install dependencies and build the packages.
 
 ```shell
-cd Intelligent-Systems-2024-Pre
+cd Intelligent-Systems-2025-Pre
 rosdep update --rosdistro foxy
 rosdep install -i --from-path src --rosdistro foxy -y
 colcon build --symlink-install
