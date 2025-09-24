@@ -15,7 +15,7 @@ from .utils import find_track_dir, nearest_point_on_trajectory
 
 
 @dataclass
-class TrackSpec(YamlDataClassConfig):
+class TrackSpec():
     name: Optional[str]
     image: Optional[str]
     resolution: float
