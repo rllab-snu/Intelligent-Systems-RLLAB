@@ -56,14 +56,22 @@ After building the package, we should use following command in every terminal we
 source install/setup.bash
 ```
 
-## Running System by ROS2 Commands
-To run the node activating rccar gym, use following command in the first terminal.
+## Running codes for pre-project 3
+To evaluate your controller follow the steps below
 
 ```shell
-ros2 run rccar_bringup rccar_bringup
+ros2 run rccar_bringup pid_control
 ```
-To run the node which enables keyboard control, use following command in the second terminal.
+You can save your trajectory by using `--save` argument.
+
+```shell 
+ros2 run rccar_bringup pid_control --save
+```
+
+From now on to evaluate your code, you need to publish `/query` topic manually using the following command in another terminal
 
 ```shell
-ros2 run rccar_bringup keyboard_control
+ros2 topic pub --once /query message/msg/Query "{id: '0', team: 'RLLAB', map: 'map1', trial: 0, exit: false}"
+# you can use other maps we provide in the maps directory
 ```
+Note that you can publish the topic once with `--once` argument
