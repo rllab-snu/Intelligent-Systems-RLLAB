@@ -1,7 +1,0 @@
-image: square_map.pgm
-resolution: 0.062500
-origin: [-42.27780204866427,-50.223348271062534,0.000000]
-negate: 0
-occupied_thresh: 0.45
-free_thresh: 0.196
-width: 2.5
