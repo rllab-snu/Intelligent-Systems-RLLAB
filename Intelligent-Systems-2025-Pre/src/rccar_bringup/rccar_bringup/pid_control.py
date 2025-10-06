@@ -196,6 +196,7 @@ class PurePursuit(Node):
                         ################## For Project1 ###################
                         """
                         Save trajectory when terminated at 'args.traj_dir'.
+                        your save file should be .pkl format
                         """
                         
                         traj_path = ""
