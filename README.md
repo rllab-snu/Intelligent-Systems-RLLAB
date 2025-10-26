@@ -74,7 +74,7 @@ For each project code, you need to publish `/query` topic manually using the fol
 
 ```shell
 ros2 topic pub --once /query message/msg/Query "{id: '0', team: 'RLLAB', map: 'map1', trial: 0, exit: false}"
-# you can use other maps we provide in the maps directory
+# don't forget to change RLLAB to your team name
 ```
 Note that you can publish the topic once with `--once` argument
 ## Map generation
