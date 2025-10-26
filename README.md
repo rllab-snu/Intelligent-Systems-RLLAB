@@ -19,7 +19,7 @@ conda create -n rccar python=3.8
 conda activate rccar
 
 git clone https://github.com/rllab-snu/Intelligent-Systems-RLLAB.git
-cd Intelligent-Systems-RLLAB/Intelligent-Systems-2025-Pre/rccar_gym
+cd Intelligent-Systems-RLLAB/Intelligent-Systems-2025-Project/rccar_gym
 pip install -e .
 ```
 This will install a gym environment for the RC car and its dependencies.
@@ -41,7 +41,7 @@ This enables installed files resulting from colcon build to use desired package 
 Now, install dependencies and build the packages.
 
 ```shell
-cd Intelligent-Systems-RLLAB/Intelligent-Systems-2025-Pre
+cd Intelligent-Systems-RLLAB/Intelligent-Systems-2025-Project
 rosdep update --rosdistro foxy
 rosdep install -i --from-path src --rosdistro foxy -y
 colcon build --symlink-install
@@ -56,22 +56,30 @@ After building the package, we should use following command in every terminal we
 source install/setup.bash
 ```
 
-## Running codes for pre-project 3
-To evaluate your controller follow the steps below
+## Project 1
+The rccar gym environment has slight modifications so you need to install the dependencies again.(commands above)
 
+To train your GPR agent and evaluate, run project 1 code with `--mode train` argument.
 ```shell
-ros2 run rccar_bringup pid_control
+ros2 run rccar_bringup RLLAB_project1 --mode train
+#replace RLLAB with your team name
 ```
-You can save your trajectory by using `--save` argument.
-
-```shell 
-ros2 run rccar_bringup pid_control --save
+To load a trained model without training, just run without `--mode` argument since the default value is `val`
+```shell
+ros2 run rccar_bringup RLLAB_project1
+#replace RLLAB with your team name
 ```
-
-From now on to evaluate your code, you need to publish `/query` topic manually using the following command in another terminal
+## Manually publishing map topic
+For each project code, you need to publish `/query` topic manually using the following command in another terminal
 
 ```shell
 ros2 topic pub --once /query message/msg/Query "{id: '0', team: 'RLLAB', map: 'map1', trial: 0, exit: false}"
 # you can use other maps we provide in the maps directory
 ```
 Note that you can publish the topic once with `--once` argument
+## Map generation
+You can change the parameters defined in `random_trackgen.py` and randomly generate your own map with `--seed` argument. You can run `random_trackgen.py` using the following command.
+```shell
+cd Intelligent-Systems-RLLAB/Intelligent-Systems-2025-Project/maps
+python random_trackgen.py --seed your_seed --name your_map_name
+```
