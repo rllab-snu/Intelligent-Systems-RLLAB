@@ -1,0 +1,24 @@
+# dynamic system
+integrator: rk4
+model: st
+
+# dynmaic configs
+mu: 1.0489
+C_Sf: 4.718
+C_Sr: 5.4562
+length_f: 0.2
+length_r: 0.15
+h: 0.074
+m: 3.74
+I: 0.04712
+s_min: -1.0
+s_max: 1.0
+sv_min: -2.65
+sv_max: 2.65
+v_switch: 7.319
+a_max: 9.51
+v_min: -8.0
+v_max: 8.0
+width: 0.29
+length: 0.57
+lidar_pos_offset: 0.155
