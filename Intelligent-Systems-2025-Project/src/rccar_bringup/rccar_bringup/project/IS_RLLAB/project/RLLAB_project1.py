@@ -16,6 +16,7 @@ from sklearn.utils import shuffle
 from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels import RBF, ConstantKernel as C
 from joblib import dump, load
+import traceback
 
 ###################################################
 ########## YOU MUST CHANGE THIS PART ##############
@@ -275,7 +276,7 @@ class GaussianProcess(Node):
                     self.result_pub.publish(result_msg)
                     env.close()
                     break
-        except:
+        except Exception as e:
             END_TIME = time.time()
             result_msg.id = id
             result_msg.team = team
@@ -286,7 +287,8 @@ class GaussianProcess(Node):
             result_msg.n_waypoints = 20
             result_msg.success = False
             result_msg.fail_type = "Script Error"
-            self.get_logger().info(">>> Script Error")
+            error_message = traceback.format_exc()
+            self.get_logger().error(f">>> Script Error - {str(e)}\n{error_message}")
             self.result_pub.publish(result_msg)
         
         if exit:
