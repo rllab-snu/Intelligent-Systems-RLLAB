@@ -10,12 +10,14 @@ from rclpy.node import Node
 from ament_index_python.packages import get_package_prefix
 
 from message.msg import Result, Query
+from geometry_msgs.msg import Pose2D
 from rccar_gym.env_wrapper import RCCarWrapper
 
 from sklearn.utils import shuffle
 from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels import RBF, ConstantKernel as C
 from joblib import dump, load
+import traceback
 
 ###################################################
 ########## YOU MUST CHANGE THIS PART ##############
@@ -89,12 +91,13 @@ class GaussianProcess(Node):
 
         self.query_sub = self.create_subscription(Query, "/query", self.query_callback, 10)
         self.result_pub = self.create_publisher(Result, "/result", 10)
+        self.pose_pub = self.create_publisher(Pose2D, f"/{TEAM_NAME}/agent_pose", 10)
 
         self.dt = args.timestep
         self.max_speed = args.max_speed
         self.min_speed = args.min_speed
         self.max_steer = args.max_steer
-        self.maps = args.maps 
+        self.maps = args.maps
         self.render = args.render
         self.time_limit = 180.0
 
@@ -226,7 +229,7 @@ class GaussianProcess(Node):
             step = 0
             terminate = False
 
-            while True:  
+            while True:
 
                 act = self.get_action(scan)
                 steer = np.clip(act[0][0], -self.max_steer, self.max_steer)
@@ -235,6 +238,13 @@ class GaussianProcess(Node):
                 obs, _, terminate, _, info = env.step(np.array([steer, speed]))
                 _, _, scan = obs
                 step += 1
+
+                current_pose = env.unwrapped.sim.agent_poses[env.unwrapped.ego_idx]
+                pose_msg = Pose2D()
+                pose_msg.x = float(current_pose[0])
+                pose_msg.y = float(current_pose[1])
+                pose_msg.theta = float(current_pose[2])
+                self.pose_pub.publish(pose_msg)
                 
                 if self.render:
                     env.render()
@@ -275,7 +285,7 @@ class GaussianProcess(Node):
                     self.result_pub.publish(result_msg)
                     env.close()
                     break
-        except:
+        except Exception as e:
             END_TIME = time.time()
             result_msg.id = id
             result_msg.team = team
@@ -286,7 +296,8 @@ class GaussianProcess(Node):
             result_msg.n_waypoints = 20
             result_msg.success = False
             result_msg.fail_type = "Script Error"
-            self.get_logger().info(">>> Script Error")
+            error_message = traceback.format_exc()
+            self.get_logger().error(f">>> Script Error - {str(e)}\n{error_message}")
             self.result_pub.publish(result_msg)
         
         if exit:
