@@ -154,15 +154,19 @@ class PPO:
                 num_steps = self.n_steps
                 # TODO: init rollout
 
+                # for logging
+                # ep_ret_list, ep_len_list = [], []
+
                 for step in range(num_steps):
                     # TODO: do rollout
 
+                    # for logging
                     # if "episode" in infos:
                     #     env_dones = infos.get("_episode", [])
                     #     for i, done in enumerate(env_dones):
                     #         if done:
-                    #             self._log("charts/episode_return", infos["episode"]["r"][i], self.total_steps)
-                    #             self._log("charts/episode_length", infos["episode"]["l"][i], self.total_steps)
+                    #             ep_ret_list.append(infos["episode"]["r"][i])
+                    #             ep_len_list.append(infos["episode"]["l"][i])
 
                     # obs = np.array(next_obs)
                     # self.total_steps += self.num_envs
@@ -170,6 +174,10 @@ class PPO:
                     #     break
 
                     pass
+
+                # for logging
+                # self._log("charts/ep_ret_mean", np.mean(ep_ret_list), self.total_steps)
+                # self._log("charts/ep_len_mean", np.mean(ep_len_list), self.total_steps)
 
                 # TODO: calculate the advatages and returns 
 
