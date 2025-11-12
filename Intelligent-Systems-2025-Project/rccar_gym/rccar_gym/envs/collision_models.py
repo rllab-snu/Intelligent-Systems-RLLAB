@@ -183,7 +183,7 @@ def collision(vertices1, vertices2):
 
 
 @njit(cache=True)
-def collision_multiple(vertices):
+def collision_multiple(vertices, num_controlled_agents):
     """
     Check pair-wise collisions for all provided vertices
 
@@ -196,11 +196,11 @@ def collision_multiple(vertices):
     """
     collisions = np.zeros((vertices.shape[0],))
     collision_idx = -1 * np.ones((vertices.shape[0],))
-    # looping over all pairs
-    for i in range(vertices.shape[0] - 1):
-        for j in range(i + 1, vertices.shape[0]):
+    # revised: looping over for main one only
+    for i in range(num_controlled_agents):
+        vi = np.ascontiguousarray(vertices[i, :, :])
+        for j in range(num_controlled_agents, vertices.shape[0]):
             # check collision
-            vi = np.ascontiguousarray(vertices[i, :, :])
             vj = np.ascontiguousarray(vertices[j, :, :])
             ij_collision = collision(vi, vj)
             # fill in results

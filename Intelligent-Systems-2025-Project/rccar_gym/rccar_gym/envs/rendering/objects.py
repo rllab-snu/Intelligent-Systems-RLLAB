@@ -211,6 +211,7 @@ class Car:
             state["poses_theta"][idx],
         )
         self.color = (255, 0, 0) if state["collisions"][idx] > 0 else self.color
+        self.color = (0, 0, 0) if state["render_color"][idx] > 0 else self.color
         self.steering = self.pose[2] + state["steering_angles"][idx]
         self.velocity = state["velocity"][idx]
         self.action = state["action"][idx]

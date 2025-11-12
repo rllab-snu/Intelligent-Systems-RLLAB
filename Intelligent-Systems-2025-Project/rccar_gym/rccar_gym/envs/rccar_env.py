@@ -85,15 +85,15 @@ class RCCarEnv(gym.Env):
     # NOTE: change matadata with default rendering-modes, add definition of render_fps
     metadata = {"render_modes": ["human", "human_fast", "rgb_array"], "render_fps": 100}
 
-    def __init__(self, args, maps, render_mode=None):
+    def __init__(self, args, maps, render_mode=None, seed=None):
         super().__init__()
-        self.seed = args.seed
+        self.seed = args.seed if seed is None else seed
 
         # Configuration
         self.config = self.set_config(args)
         self.maps = maps
         self.params = self.config["params"]
-        self.num_agents = self.config["num_agents"]
+        self.num_agents = 1
         self.timestep = self.config["timestep"]
         self.ego_idx = self.config["ego_idx"]
         self.integrator = IntegratorType.from_string(self.config["integrator"])
@@ -101,6 +101,11 @@ class RCCarEnv(gym.Env):
         self.observation_config = self.config["observation_config"]
         self.action_type = CarAction(self.config["control_input"], params=self.params)
         self.max_episode_steps = self.config["max_episode_steps"]
+
+        self.num_controlled_agents = 1
+        self.num_static_dummy = 0
+        self.num_dynamic_dummy = 0
+        self.discrete_obstacles = False
 
         # radius to consider done
         self.start_thresh = 0.5  # 10cm
@@ -110,30 +115,33 @@ class RCCarEnv(gym.Env):
         self.poses_y = []
         self.poses_theta = []
         self.collisions = np.zeros((self.num_agents,))
+        self.active_agents = []
 
         # loop completion
         self.near_start = True
         self.num_toggles = 0
 
         # race info
-        self.lap_times = np.zeros((self.num_agents,))
-        self.lap_counts = np.zeros((self.num_agents,))
+        self.lap_times = np.zeros((self.num_controlled_agents,))
+        self.lap_counts = np.zeros((self.num_controlled_agents,))
         self.current_time = 0.0
 
         # finish line info
         self.num_toggles = 0
         self.near_start = True
-        self.near_starts = np.array([True] * self.num_agents)
-        self.toggle_list = np.zeros((self.num_agents,))
-        self.start_xs = np.zeros((self.num_agents,))
-        self.start_ys = np.zeros((self.num_agents,))
-        self.start_thetas = np.zeros((self.num_agents,))
+        self.near_starts = np.array([True] * self.num_controlled_agents)
+        self.toggle_list = np.zeros((self.num_controlled_agents,))
+        self.start_xs = np.zeros((self.num_controlled_agents,))
+        self.start_ys = np.zeros((self.num_controlled_agents,))
+        self.start_thetas = np.zeros((self.num_controlled_agents,))
         self.start_rot = np.eye(2)
 
         # initiate stuff
         self.sim = Simulator(
             self.params,
             self.num_agents,
+            self.num_static_dummy,
+            self.num_dynamic_dummy,
             self.seed,
             time_step=self.timestep,
             integrator=self.integrator,
@@ -145,7 +153,7 @@ class RCCarEnv(gym.Env):
         # render config
         self.render_obs = None
         self.render_mode = render_mode
-
+        self.render_color = np.concatenate((np.zeros(self.num_controlled_agents), np.ones(self.num_agents-self.num_controlled_agents)), axis=0)
         # match render_fps to integration timestep
         self.metadata["render_fps"] = int(1.0 / self.timestep)
         if self.render_mode == "human_fast":
@@ -171,7 +179,7 @@ class RCCarEnv(gym.Env):
             a configuration dict
         """
         return {
-            "seed": args.seed,
+            "seed": self.seed,
             "params": {
                 "mu": args.mu,
                 "C_Sf": args.C_Sf,
@@ -193,7 +201,6 @@ class RCCarEnv(gym.Env):
                 "length": args.length,
                 "lidar_pos_offset": args.lidar_pos_offset
             },
-            "num_agents": args.num_agents,
             "timestep": args.timestep,
             "ego_idx": args.ego_idx,
             "integrator": args.integrator,
@@ -223,6 +230,85 @@ class RCCarEnv(gym.Env):
             [self.track.centerline.xs, self.track.centerline.ys, self.track.centerline.vxs]
         ).T
 
+        # random positioning of obstacles
+        self.static_poses = None
+        self.dynamic_poses = None
+        self.dynamic_paths = []
+
+        if self.num_agents > 1:
+            center_xs = self.track.centerline.xs
+            center_ys = self.track.centerline.ys
+            track_width = self.track.spec.width
+
+            dx = np.diff(center_xs, append=center_xs[0])
+            dy = np.diff(center_ys, append=center_ys[0])
+            thetas = np.arctan2(dy, dx)
+            offset_dist = track_width * 0.5 # * 0.7
+            
+            right_xs = center_xs - offset_dist * np.sin(thetas)
+            right_ys = center_ys + offset_dist * np.cos(thetas)
+
+            left_xs = center_xs + offset_dist * np.sin(thetas)
+            left_ys = center_ys - offset_dist * np.cos(thetas)
+
+            if self.num_static_dummy > 0:
+                all_poses = []
+
+                n_interval = 20 # for every n_interval indices, randomly choose num_static_dummy indices
+                grouped_index = np.array([i for i in range(0, len(center_xs), n_interval)])
+                indices = np.sort(np.random.choice(a=len(grouped_index), size=self.num_static_dummy, replace=False))
+                indices = grouped_index[indices]
+
+                np.random.shuffle(indices)
+
+                if self.discrete_obstacles:
+                    option = [0, 0.5, 1] # left, center, right
+                    static_prob = [1/2, 0, 1/2] # [1/3, 1/3, 1/3]
+                    alphas = np.random.choice(option, size=self.num_static_dummy, p=static_prob)
+                else:
+                    alphas = np.random.uniform(0, 1, size=self.num_static_dummy)
+
+                l_xs = left_xs[indices]
+                r_xs = right_xs[indices]
+                l_ys = left_ys[indices]
+                r_ys = right_ys[indices]
+                ths = thetas[indices]
+
+                final_xs = (1 - alphas) * l_xs + alphas * r_xs
+                final_ys = (1 - alphas) * l_ys + alphas * r_ys
+
+                all_poses = np.stack((final_xs, final_ys, ths), axis=1)
+
+                self.static_poses = np.vstack(all_poses)
+
+            if self.num_dynamic_dummy > 0:
+                dynamic_poses = []
+                self.dynamic_paths = []
+                for _ in range(self.num_dynamic_dummy):
+                    # include center spawn of dynamic agents
+                    # dir = np.random.choice(np.arange(1,4), 1, replace=False).item()
+
+                    # exclude center spawn of dynamic agents
+                    dynamic_dir = np.random.choice(np.arange(1,3), 1, replace=False).item()
+
+                    if dynamic_dir == 1:
+                        path = np.column_stack((left_xs, left_ys, thetas))
+                    elif dynamic_dir == 2:
+                        path = np.column_stack((right_xs, right_ys, thetas))
+                    else:
+                        path = np.column_stack((center_xs, center_ys, thetas))
+
+                    path = np.flip(path, axis=0)
+                    start_index = np.random.choice(len(center_xs), 1, replace=False).item()
+                    start_pose = path[start_index]
+                    dynamic_poses.append([start_pose])
+                    self.dynamic_paths.append([start_index, path])
+
+                self.dynamic_poses = np.vstack(dynamic_poses)
+
+        self.sim.static_poses = self.static_poses
+        self.sim.dynamic_paths = self.dynamic_paths
+
         # observations
         self.agent_ids = [f"agent_{i}" for i in range(self.num_agents)]
 
@@ -234,7 +320,7 @@ class RCCarEnv(gym.Env):
 
         # reset modes
         self.reset_fn = make_reset_fn(
-            **self.config["reset_config"], track=self.track, num_agents=self.num_agents
+            **self.config["reset_config"], track=self.track, num_agents=self.num_controlled_agents
         )
 
         # stateful observations for rendering
@@ -251,8 +337,6 @@ class RCCarEnv(gym.Env):
         if config:
             self.config = deep_update(self.config, config)
             self.params = self.config["params"]
-
-
 
     def _check_done(self):
         """
@@ -283,7 +367,7 @@ class RCCarEnv(gym.Env):
 
         dist2 = delta_pt[0, :] ** 2 + temp_y**2
         closes = dist2 <= 0.1
-        for i in range(self.num_agents):
+        for i in range(self.num_controlled_agents):
             if closes[i] and not self.near_starts[i]:
                 self.near_starts[i] = True
                 self.toggle_list[i] += 1
@@ -294,7 +378,7 @@ class RCCarEnv(gym.Env):
             if self.toggle_list[i] < 4:
                 self.lap_times[i] = self.current_time
 
-        terminate = (self.collisions[self.ego_idx]) or np.all(self.toggle_list >= 2)
+        terminate = np.any(self.collisions) or np.all(self.toggle_list[:self.num_controlled_agents] >= 2)
         truncate = (self.current_time // self.timestep) >= self.max_episode_steps
         terminate, truncate = bool(terminate), bool(truncate)
 
@@ -324,7 +408,6 @@ class RCCarEnv(gym.Env):
         """
 
         # call simulation step
-        action = action.reshape(-1, 2)
         self.sim.step(action)
 
         # observation
@@ -350,11 +433,12 @@ class RCCarEnv(gym.Env):
             "lap_counts": self.lap_counts,
             "collisions": self.sim.collisions,
             "sim_time": self.current_time,
+            "render_color": self.render_color
         }
 
         # check done
         terminate, truncate, toggle_list = self._check_done()
-        info = {"checkpoint_done": toggle_list}
+        info = {"checkpoint_done": toggle_list[:self.num_controlled_agents]}
 
         return obs, reward, terminate, truncate, info
 
@@ -372,8 +456,9 @@ class RCCarEnv(gym.Env):
             done (bool): if the simulation is done
             info (dict): auxillary information dictionary
         """
-        if seed is not None:
-            np.random.seed(seed=seed)
+        if seed is None:
+            seed = self.seed
+        np.random.seed(seed=seed)
         super().reset(seed=seed)
 
         if options is not None:
@@ -390,10 +475,20 @@ class RCCarEnv(gym.Env):
         self.toggle_list = np.zeros((self.num_agents,))
 
         # states after reset
+        poses = np.zeros((self.num_agents, 3))
         if options is not None and "poses" in options:
             poses = options["poses"]
+            self.static_poses = options["static_poses"]
+            self.sim.static_poses = self.static_poses
+            self.dynamic_paths = options["dynamic_paths"]
+            self.sim.dynamic_paths = self.dynamic_paths
         else:
-            poses = self.reset_fn.sample()
+            poses[:self.num_controlled_agents, :] = self.reset_fn.sample()
+
+        poses[self.num_controlled_agents:self.num_controlled_agents+self.num_static_dummy, :] = self.static_poses
+        poses[self.num_controlled_agents+self.num_static_dummy:, :] = self.dynamic_poses
+
+        self.sim.controlled_init_pose = poses[0]
 
         assert isinstance(poses, np.ndarray) and poses.shape == (
             self.num_agents,
@@ -420,7 +515,7 @@ class RCCarEnv(gym.Env):
         self.sim.reset(poses)
 
         # get no input observations
-        action = np.zeros(2)
+        action = np.zeros((self.num_agents, 2))
         obs, _, _, _, info = self.step(action)
 
         return obs, info

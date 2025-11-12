@@ -118,7 +118,8 @@ class OriginalObservation(Observation):
             "lap_counts": [],
         }
 
-        for i, agent in enumerate(self.env.sim.agents):
+        for i in range(self.env.sim.num_controlled_agents):
+            agent = self.env.sim.agents[i]
             agent_scan = self.env.sim.agent_scans[i]
             lap_time = self.env.lap_times[i]
             lap_count = self.env.lap_counts[i]

@@ -368,6 +368,60 @@ class RaceCar(object):
 
         agent_scans[agent_index] = new_scan
 
+class DummyCar(RaceCar):
+    """
+    Base level race car class, handles the physics and laser scan of a single vehicle
+
+    Data Members:
+        params (dict): vehicle parameters dictionary
+        is_ego (bool): ego identifier
+        time_step (float): physics timestep
+        num_beams (int): number of beams in laser
+        fov (float): field of view of laser
+        state (np.ndarray (7, )): state vector [x, y, theta, vel, steer_angle, ang_vel, slip_angle]
+        odom (np.ndarray(13, )): odometry vector [x, y, z, qx, qy, qz, qw, linear_x, linear_y, linear_z, angular_x, angular_y, angular_z]
+        accel (float): current acceleration input
+        steer_angle_vel (float): current steering velocity input
+        in_collision (bool): collision indicator
+    """
+    def __init__(self, params, seed, action_type: CarAction, **kwargs):
+        super().__init__(params, seed, action_type, **kwargs)
+
+    def update_params(self, params):
+        # No need to update params for static car
+        pass
+
+    def set_map(self, map: str | Track):
+        # No need to set map for static car
+        # super().scan_simulator.set_map(map)
+        pass
+
+    def reset(self, pose):
+        # clear control inputs
+        self.accel = 0.0
+        self.steer_angle_vel = 0.0
+        # clear collision indicator
+        self.in_collision = False
+        # init state from pose
+        self.state = self.model.get_initial_state(pose=pose)
+        # No need to reset scan things or buffer
+
+    def update_pose(self, raw_steer, vel):
+        # No need to update pose for static car
+        return None # no scan
+
+    def update_opp_poses(self, opp_poses):
+        # No need to update opponent poses for static car
+        pass
+
+    def update_scan(self, agent_scans, agent_index):
+        # No need to update scan for static car
+        pass
+
+    def update_position(self, pose):
+        self.state[0] = pose[0]
+        self.state[1] = pose[1]
+        self.state[2] = pose[2]
 
 class Simulator(object):
     """
@@ -391,6 +445,8 @@ class Simulator(object):
         self,
         params,
         num_agents,
+        num_static_dummy,
+        num_dynamic_dummy,
         seed,
         action_type: CarAction,
         integrator=IntegratorType.RK4,
@@ -414,6 +470,10 @@ class Simulator(object):
             None
         """
         self.num_agents = num_agents
+        self.num_static_dummy = num_static_dummy
+        self.num_dynamic_dummy = num_dynamic_dummy
+        self.num_controlled_agents = num_agents - num_static_dummy - num_dynamic_dummy
+        
         self.seed = seed
         self.time_step = time_step
         self.ego_idx = ego_idx
@@ -426,8 +486,12 @@ class Simulator(object):
         self.collision_idx = -1 * np.ones((self.num_agents,))
         self.model = model
 
+        self.static_poses = np.empty((self.num_static_dummy, 3))
+        self.dynamic_paths = []
+        self.controlled_init_pose = np.zeros((1, 3))
+
         # initializing agents
-        for i in range(self.num_agents):
+        for i in range(self.num_controlled_agents):
             car = RaceCar(
                 params,
                 self.seed,
@@ -439,6 +503,18 @@ class Simulator(object):
             )
             self.agents.append(car)
 
+        for i in range(self.num_static_dummy + self.num_dynamic_dummy):
+            car = DummyCar(
+                params,
+                self.seed,
+                is_ego=bool(i == ego_idx),
+                time_step=self.time_step,
+                integrator=integrator,
+                model=model,
+                action_type=action_type,
+            )
+            self.agents.append(car)
+        
         # initialize agents scan, to be accessed from observation types
         num_beams = self.agents[0].scan_simulator.num_beams
         self.agent_scans = np.empty((self.num_agents, num_beams))
@@ -497,7 +573,7 @@ class Simulator(object):
                 self.params["length"],
                 self.params["width"],
             )
-        self.collisions, self.collision_idx = collision_multiple(all_vertices)
+        self.collisions, self.collision_idx = collision_multiple(all_vertices, self.num_controlled_agents)
 
     def step(self, control_inputs):
         """
@@ -510,8 +586,30 @@ class Simulator(object):
             observations (dict): dictionary for observations: poses of agents, current laser scan of each agent, collision indicators, etc.
         """
 
+        # fix static agents pose
+        self.agent_poses[self.num_controlled_agents : self.num_controlled_agents + self.num_static_dummy, :] = self.static_poses
+
+        # dynamic agents pose update
+        dynamic_agent_id = self.num_controlled_agents + self.num_static_dummy
+        for i in range(self.num_dynamic_dummy):
+            c_id = self.dynamic_paths[i][0]
+            if c_id == len(self.dynamic_paths[i][1])-1:
+                c_id = 0
+            else:
+                c_id += 1
+            self.agent_poses[dynamic_agent_id+i,:] = self.dynamic_paths[i][1][c_id]
+            self.dynamic_paths[i][0] = c_id
+
+        # is this necessary?
+        self.agent_steerings[self.num_controlled_agents:] = 0
+        self.agent_velocity[self.num_controlled_agents:] = 0
+
+        for i in range(self.num_dynamic_dummy):
+            agent = self.agents[dynamic_agent_id+i]
+            agent.update_position(self.agent_poses[dynamic_agent_id+i]) # TODO: how to deal with this?
+
         # looping over agents
-        for i, agent in enumerate(self.agents):
+        for i, agent in enumerate(self.agents[:self.num_controlled_agents]):
             # update each agent's pose
             current_scan = agent.update_pose(control_inputs[i, 0], control_inputs[i, 1])
             self.agent_scans[i, :] = current_scan
@@ -524,11 +622,10 @@ class Simulator(object):
         # check collisions between all agents
         self.check_collision()
 
-        for i, agent in enumerate(self.agents):
+        for i, agent in enumerate(self.agents[:self.num_controlled_agents]):
             # update agent's information on other agents
-            opp_poses = np.concatenate(
-                (self.agent_poses[0:i, :], self.agent_poses[i + 1 :, :]), axis=0
-            )
+            # opp_poses = np.concatenate((self.agent_poses[0:i, :], self.agent_poses[i+1:, :]), axis=0)
+            opp_poses = self.agent_poses[self.num_controlled_agents:, :] # not consider other controlled agents as opponents
             agent.update_opp_poses(opp_poses)
 
             # update each agent's current scan based on other agents
