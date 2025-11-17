@@ -56,17 +56,17 @@ After building the package, we should use following command in every terminal we
 source install/setup.bash
 ```
 
-## Project 1
+## Project
 The rccar gym environment has slight modifications so you need to install the dependencies again.(commands above)
 
-To train your GPR agent and evaluate, run project 1 code with `--mode train` argument.
+To train your PPO agent and evaluate, run project code with `--mode train` argument.
 ```shell
-ros2 run rccar_bringup RLLAB_project1 --mode train
+ros2 run rccar_bringup RLLAB_project2 --mode train
 #replace RLLAB with your team name
 ```
 To load a trained model without training, just run without `--mode` argument since the default value is `val`
 ```shell
-ros2 run rccar_bringup RLLAB_project1
+ros2 run rccar_bringup RLLAB_project2
 #replace RLLAB with your team name
 ```
 ## Manually publishing map topic
