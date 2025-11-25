@@ -432,7 +432,7 @@ class ScanSimulator2D(object):
         max_range (float, default=30.0): maximum range of the laser
     """
 
-    def __init__(self, num_beams, fov, eps=0.0001, theta_dis=2000, max_range=30.0):
+    def __init__(self, num_beams, fov, eps=0.0001, theta_dis=2000, max_range=10.0):
         # initialization
         self.num_beams = num_beams
         self.fov = fov

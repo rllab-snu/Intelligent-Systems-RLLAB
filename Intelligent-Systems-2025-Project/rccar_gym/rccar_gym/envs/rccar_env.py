@@ -29,7 +29,7 @@ Fix: Hyeokjin Kwon - https://github.com/ineogi2
 import gymnasium as gym
 from typing import List
 
-from .action import (CarAction, from_single_to_multi_action_space)
+from .action import CarAction, from_single_to_multi_action_space
 from .integrator import IntegratorType
 from .rendering import make_renderer
 
@@ -93,7 +93,6 @@ class RCCarEnv(gym.Env):
         self.config = self.set_config(args)
         self.maps = maps
         self.params = self.config["params"]
-        self.num_agents = 1
         self.timestep = self.config["timestep"]
         self.ego_idx = self.config["ego_idx"]
         self.integrator = IntegratorType.from_string(self.config["integrator"])
@@ -103,9 +102,10 @@ class RCCarEnv(gym.Env):
         self.max_episode_steps = self.config["max_episode_steps"]
 
         self.num_controlled_agents = 1
-        self.num_static_dummy = 0
+        self.num_obstacles = self.config["num_obstacles"]
+        self.num_static_dummy = self.num_obstacles * 2
         self.num_dynamic_dummy = 0
-        self.discrete_obstacles = False
+        self.num_agents = 1 + self.num_static_dummy + self.num_dynamic_dummy
 
         # radius to consider done
         self.start_thresh = 0.5  # 10cm
@@ -153,17 +153,15 @@ class RCCarEnv(gym.Env):
         # render config
         self.render_obs = None
         self.render_mode = render_mode
-        self.render_color = np.concatenate((np.zeros(self.num_controlled_agents), np.ones(self.num_agents-self.num_controlled_agents)), axis=0)
+        self.render_color = np.concatenate((np.zeros(self.num_controlled_agents), np.ones(self.num_agents - self.num_controlled_agents)), axis=0)
         # match render_fps to integration timestep
         self.metadata["render_fps"] = int(1.0 / self.timestep)
         if self.render_mode == "human_fast":
             self.metadata["render_fps"] *= 10  # boost fps by 10x
 
         # action space
-        self.action_space = from_single_to_multi_action_space(
-            self.action_type.space, self.num_agents
-        )
-        
+        self.action_space = from_single_to_multi_action_space(self.action_type.space, self.num_agents)
+
         self.init_map()
 
     def set_config(self, args) -> dict:
@@ -199,8 +197,9 @@ class RCCarEnv(gym.Env):
                 "v_max": args.v_max,
                 "width": args.width,
                 "length": args.length,
-                "lidar_pos_offset": args.lidar_pos_offset
+                "lidar_pos_offset": args.lidar_pos_offset,
             },
+            "num_obstacles": args.num_obstacles,
             "timestep": args.timestep,
             "ego_idx": args.ego_idx,
             "integrator": args.integrator,
@@ -208,12 +207,12 @@ class RCCarEnv(gym.Env):
             "control_input": list(args.control_input),
             "observation_config": args.observation_config,
             "reset_config": args.reset_config,
-            "max_episode_steps": args.max_episode_steps
+            "max_episode_steps": args.max_episode_steps,
         }
 
     def init_map(self, map=None):
         if map is None:
-            idx = random.randint(0, len(self.maps)-1)
+            idx = random.randint(0, len(self.maps) - 1)
             map = self.maps[idx]
         assert map in self.maps
         self.map = map
@@ -224,11 +223,9 @@ class RCCarEnv(gym.Env):
             self.track = self.map
         else:
             self.track = Track.from_track_name(self.map)
-        
+
         # waypoint
-        self.waypoints = np.stack(
-            [self.track.centerline.xs, self.track.centerline.ys, self.track.centerline.vxs]
-        ).T
+        self.waypoints = np.stack([self.track.centerline.xs, self.track.centerline.ys, self.track.centerline.vxs]).T
 
         # random positioning of obstacles
         self.static_poses = None
@@ -243,8 +240,8 @@ class RCCarEnv(gym.Env):
             dx = np.diff(center_xs, append=center_xs[0])
             dy = np.diff(center_ys, append=center_ys[0])
             thetas = np.arctan2(dy, dx)
-            offset_dist = track_width * 0.5 # * 0.7
-            
+            offset_dist = track_width * 0.5 * 0.8
+
             right_xs = center_xs - offset_dist * np.sin(thetas)
             right_ys = center_ys + offset_dist * np.cos(thetas)
 
@@ -254,19 +251,17 @@ class RCCarEnv(gym.Env):
             if self.num_static_dummy > 0:
                 all_poses = []
 
-                n_interval = 20 # for every n_interval indices, randomly choose num_static_dummy indices
+                n_interval = 20  # for every n_interval indices, randomly choose num_static_dummy indices
                 grouped_index = np.array([i for i in range(0, len(center_xs), n_interval)])
-                indices = np.sort(np.random.choice(a=len(grouped_index), size=self.num_static_dummy, replace=False))
+                indices = np.sort(np.random.choice(a=len(grouped_index), size=self.num_obstacles, replace=False))
                 indices = grouped_index[indices]
 
                 np.random.shuffle(indices)
 
-                if self.discrete_obstacles:
-                    option = [0, 0.5, 1] # left, center, right
-                    static_prob = [1/2, 0, 1/2] # [1/3, 1/3, 1/3]
-                    alphas = np.random.choice(option, size=self.num_static_dummy, p=static_prob)
-                else:
-                    alphas = np.random.uniform(0, 1, size=self.num_static_dummy)
+                alphas = np.random.uniform(0, 1, size=self.num_obstacles)
+                alphas_half_mask = alphas > 0.5
+                alphas = alphas_half_mask * 0.45 + alphas * 0.55
+                alphas_twin = alphas + (1 - 2 * alphas_half_mask) * 0.1
 
                 l_xs = left_xs[indices]
                 r_xs = right_xs[indices]
@@ -276,8 +271,13 @@ class RCCarEnv(gym.Env):
 
                 final_xs = (1 - alphas) * l_xs + alphas * r_xs
                 final_ys = (1 - alphas) * l_ys + alphas * r_ys
-
                 all_poses = np.stack((final_xs, final_ys, ths), axis=1)
+
+                final_xs_twin = (1 - alphas_twin) * l_xs + alphas_twin * r_xs
+                final_ys_twin = (1 - alphas_twin) * l_ys + alphas_twin * r_ys
+                all_poses_twin = np.stack((final_xs_twin, final_ys_twin, ths), axis=1)
+
+                all_poses = np.concatenate((all_poses, all_poses_twin), axis=0)
 
                 self.static_poses = np.vstack(all_poses)
 
@@ -289,7 +289,7 @@ class RCCarEnv(gym.Env):
                     # dir = np.random.choice(np.arange(1,4), 1, replace=False).item()
 
                     # exclude center spawn of dynamic agents
-                    dynamic_dir = np.random.choice(np.arange(1,3), 1, replace=False).item()
+                    dynamic_dir = np.random.choice(np.arange(1, 3), 1, replace=False).item()
 
                     if dynamic_dir == 1:
                         path = np.column_stack((left_xs, left_ys, thetas))
@@ -312,16 +312,12 @@ class RCCarEnv(gym.Env):
         # observations
         self.agent_ids = [f"agent_{i}" for i in range(self.num_agents)]
 
-        assert (
-            "type" in self.observation_config
-        ), "observation_config must contain 'type' key"
+        assert "type" in self.observation_config, "observation_config must contain 'type' key"
         self.observation_type = observation_factory(env=self, **self.observation_config)
         self.observation_space = self.observation_type.space()
 
         # reset modes
-        self.reset_fn = make_reset_fn(
-            **self.config["reset_config"], track=self.track, num_agents=self.num_controlled_agents
-        )
+        self.reset_fn = make_reset_fn(**self.config["reset_config"], track=self.track, num_agents=self.num_controlled_agents)
 
         # stateful observations for rendering
         # add choice of colors (same, random, ...)
@@ -378,7 +374,7 @@ class RCCarEnv(gym.Env):
             if self.toggle_list[i] < 4:
                 self.lap_times[i] = self.current_time
 
-        terminate = np.any(self.collisions) or np.all(self.toggle_list[:self.num_controlled_agents] >= 2)
+        terminate = np.any(self.collisions) or np.all(self.toggle_list[: self.num_controlled_agents] >= 2)
         truncate = (self.current_time // self.timestep) >= self.max_episode_steps
         terminate, truncate = bool(terminate), bool(truncate)
 
@@ -393,7 +389,7 @@ class RCCarEnv(gym.Env):
         self.poses_theta = self.sim.agent_poses[:, 2]
         self.collisions = self.sim.collisions
 
-    def step(self, action:np.ndarray):
+    def step(self, action: np.ndarray):
         """
         Step function for the gym env
 
@@ -414,7 +410,7 @@ class RCCarEnv(gym.Env):
         obs = self.observation_type.observe()
 
         # times
-        reward = 0.0     # not use
+        reward = 0.0  # not use
         self.current_time = self.current_time + self.timestep
 
         # update data member
@@ -426,19 +422,19 @@ class RCCarEnv(gym.Env):
             "poses_x": self.sim.agent_poses[:, 0],
             "poses_y": self.sim.agent_poses[:, 1],
             "poses_theta": self.sim.agent_poses[:, 2],
-            "velocity" : self.sim.agent_velocity,
+            "velocity": self.sim.agent_velocity,
             "steering_angles": self.sim.agent_steerings,
             "action": action,
             "lap_times": self.lap_times,
             "lap_counts": self.lap_counts,
             "collisions": self.sim.collisions,
             "sim_time": self.current_time,
-            "render_color": self.render_color
+            "render_color": self.render_color,
         }
 
         # check done
         terminate, truncate, toggle_list = self._check_done()
-        info = {"checkpoint_done": toggle_list[:self.num_controlled_agents]}
+        info = {"checkpoint_done": toggle_list[: self.num_controlled_agents]}
 
         return obs, reward, terminate, truncate, info
 
@@ -456,13 +452,14 @@ class RCCarEnv(gym.Env):
             done (bool): if the simulation is done
             info (dict): auxillary information dictionary
         """
-        if seed is None:
-            seed = self.seed
-        np.random.seed(seed=seed)
-        super().reset(seed=seed)
+        if seed is not None:
+            np.random.seed(seed=seed)
+            super().reset(seed=seed)
+        else:
+            super().reset()
 
         if options is not None:
-            self.init_map(options['map'])
+            self.init_map(options["map"])
         else:
             self.init_map()
 
@@ -483,10 +480,10 @@ class RCCarEnv(gym.Env):
             self.dynamic_paths = options["dynamic_paths"]
             self.sim.dynamic_paths = self.dynamic_paths
         else:
-            poses[:self.num_controlled_agents, :] = self.reset_fn.sample()
+            poses[: self.num_controlled_agents, :] = self.reset_fn.sample()
 
-        poses[self.num_controlled_agents:self.num_controlled_agents+self.num_static_dummy, :] = self.static_poses
-        poses[self.num_controlled_agents+self.num_static_dummy:, :] = self.dynamic_poses
+        poses[self.num_controlled_agents : self.num_controlled_agents + self.num_static_dummy, :] = self.static_poses
+        poses[self.num_controlled_agents + self.num_static_dummy :, :] = self.dynamic_poses
 
         self.sim.controlled_init_pose = poses[0]
 

@@ -123,7 +123,7 @@ class RaceCar(object):
         self.in_collision = False
 
         # collision threshold for iTTC to environment
-        self.ttc_thresh = 0.005
+        self.ttc_thresh = 0.01
 
         # initialize scan sim
         if RaceCar.scan_simulator is None:
