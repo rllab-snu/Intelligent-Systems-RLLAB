@@ -22,6 +22,7 @@ setup(
         'lark',
         'empy==3.3.4',
         'matplotlib',
-        'shapely'
+        'shapely',
+        'wandb'
     ]
 )
