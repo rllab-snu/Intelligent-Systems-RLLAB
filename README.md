@@ -59,14 +59,14 @@ source install/setup.bash
 ## Project
 The rccar gym environment has slight modifications so you need to install the dependencies again.(commands above)
 
-To train your PPO agent and evaluate, run project code with `--mode train` argument.
+To train your agent and evaluate, run project code with `--mode train` argument.
 ```shell
-ros2 run rccar_bringup RLLAB_project2 --mode train
+ros2 run rccar_bringup RLLAB_project3 --mode train
 #replace RLLAB with your team name
 ```
 To load a trained model without training, just run without `--mode` argument since the default value is `val`
 ```shell
-ros2 run rccar_bringup RLLAB_project2
+ros2 run rccar_bringup RLLAB_project3
 #replace RLLAB with your team name
 ```
 ## Manually publishing map topic
@@ -82,4 +82,10 @@ You can change the parameters defined in `random_trackgen.py` and randomly gener
 ```shell
 cd Intelligent-Systems-RLLAB/Intelligent-Systems-2025-Project/maps
 python random_trackgen.py --seed your_seed --name your_map_name
+```
+## Obstacle generation
+The obstacles are generated in the map randomly with `--num_obstacles` argument. If you want to generate different positions of obstacles change the seed.
+If there are too many obstacles generated inside the environment, rendering could slow down.
+```shell
+ros2 run rccar_bringup RLLAB_project3 --num_obstacles 20
 ```
