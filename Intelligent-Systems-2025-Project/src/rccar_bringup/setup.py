@@ -22,7 +22,8 @@ setup(
         'console_scripts': [
             'pid_control = rccar_bringup.project.IS_RLLAB.project.pid_control:main',
             "RLLAB_project1 = rccar_bringup.project.IS_RLLAB.project.RLLAB_project1:main",
-            "RLLAB_project2 = rccar_bringup.project.IS_RLLAB.project.RLLAB_project1:main",
+            "RLLAB_project2 = rccar_bringup.project.IS_RLLAB.project.RLLAB_project2:main",
+            "RLLAB_project3 = rccar_bringup.project.IS_RLLAB.project.RLLAB_project3:main"
         ],
     },
 )
